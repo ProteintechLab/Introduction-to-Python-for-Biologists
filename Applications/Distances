@@ -1,0 +1,117 @@
+# Import required libraries
+import numpy as np
+from Bio.PDB import PDBParser, PDBIO
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib import cm
+
+# Set up input PDB file
+pdb_file = "1U8F.pdb"
+
+# Parse structure using Biopython
+parser = PDBParser(QUIET=True)
+structure = parser.get_structure("GAPDH", pdb_file)
+model = structure[0]
+
+# Prepare lists to store residue info and coordinates
+residue_data = []
+ca_coords = []
+chain_res_map = {}
+
+# Loop through chains and residues to collect alpha carbon coordinates
+for chain in model:
+    chain_id = chain.id
+    chain_res_map[chain_id] = []
+
+    for residue in chain:
+        if residue.id[0] == " " and "CA" in residue:
+            res_num = residue.id[1]
+            res_name = residue.resname
+            coord = residue["CA"].coord
+
+            residue_data.append({
+                "Chain": chain_id, 
+                "Residue": res_name, 
+                "ResidueNum": res_num
+            })
+            ca_coords.append((chain_id, res_num, coord))
+            chain_res_map[chain_id].append((res_num, coord))
+
+# Assign a unique colour to each chain using matplotlib's tab 10 colour map or cm
+available_chains = list(chain_res_map.keys())
+color_map = cm.get_cmap('tab10', len(available_chains))
+
+chains_to_color = {
+    chain_id: f"#{int(255*r):02x}{int(255*g):02x}{int(255*b):02x}"
+    for chain_id, (r, g, b, _) in zip(available_chains, color_map.colors)
+}
+ # Add color info to the residue data
+for entry in residue_data:
+   entry["Colour"] = chains_to_color.get(entry["Chain"], "#808080")
+
+# Save residue metadata to CSV
+df = pd.DataFrame(residue_data)
+df.to_csv("gapdh_residues_colored.csv", index=False)
+print("Colored residue list saved to: gapdh_residues_colored.csv")
+
+# Measure the distance between two residues
+if len(available_chains) >=2:
+    chain1, chain2 = available_chains[:2]
+    res1_info = chain_res_map[chain1][0]
+    res2_info = chain_res_map[chain2][0]
+
+    coord1 = res1_info[1]
+    coord2 = res2_info[1]
+
+    distance = np.linalg.norm(coord1 - coord2)
+    print(f"Distance between {chain1}{res1_info[0]} and {chain2}{res2_info[0]}: {distance:.2f} Angstroms")
+else:
+    print("Less than two chains available. Cannot measure inter-chain distance.")
+
+# Build a distance matrix between each alpha carbon-alpha carbon pair
+num_residues = len(ca_coords)
+dist_matrix = np.zeros((num_residues, num_residues))
+
+for i in range(num_residues):
+    for j in range(num_residues):
+        dist_matrix[i, j] = np.linalg.norm(ca_coords[i][2] - ca_coords[j][2])
+
+# Save matrix and plot as heatmpa
+np.savetxt("gapdh_ca_distance_matrix.csv", dist_matrix, delimiter = ",", fmt = "%.2f")
+print("Distance matrix saved to: gapdh_ca_distance_matrix.csv")
+
+plt.figure(figsize=(10, 8))
+plt.imshow(dist_matrix, cmap = "Blues_r", interpolation="nearest")
+plt.title("Alpha C-Alpha C distance matrix in Angstroms")
+plt.colorbar(label = "Distance in Angstroms")
+plt.xlabel("Residue Index")
+plt.ylabel("Residue Index")
+plt.tight_layout()
+plt.savefig("gapdh_distance_heatmap.png", dpi = 600)
+plt.show()
+
+# Calculate average distance per residue to all others
+
+avg_distances = dist_matrix.mean(axis = 1)
+
+residue_b_factors = {
+    (chain, resnum): avg
+    for (chain, resnum, _), avg in zip(ca_coords, avg_distances)
+}
+
+# Write average distance into B factor field of each atom
+for chain in model:
+    for residue in chain: 
+        if residue.id[0] == " " and "CA" in residue:
+            chain_id = chain.id
+            res_num = residue.id[1]
+            b = residue_b_factors.get((chain_id, res_num))
+            if b is not None:
+                for atom in residue:
+                    atom.set_bfactor(b)
+
+# Save the modified structure with distance based B factors
+io = PDBIO()
+io.set_structure(structure)
+io.save("gapdh_colored_by_distance.pdb")
+print("B-Factor mapped structure saved")
