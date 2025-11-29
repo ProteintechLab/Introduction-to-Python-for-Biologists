@@ -1,4 +1,3 @@
-# Exercise 3 — fix 5 bugs
 from Bio import SeqIo                 # 1
 def calculate_gc(seq):
     """Return GC% for a sequence""" 
