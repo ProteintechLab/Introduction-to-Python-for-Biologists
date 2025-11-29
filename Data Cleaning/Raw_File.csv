@@ -1,0 +1,9 @@
+ID, Sample, Concentration, Concentration, Comment
+
+1, S1, 0.56, 0.56, ok
+
+2, S2, , 0.78, ok
+
+3, S3, N/A, N/A, error
+
+4, S4, 1.2, 1.2, 
